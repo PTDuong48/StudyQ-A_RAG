@@ -1,22 +1,12 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "frontend/dist"
-      }
-    }
-  ],
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/frontend/$1"
+      "dest": "/$1"
     }
-  ],
-  "env": {
-    "VITE_API_BASE_URL": "@api_base_url"
-  }
+  ]
 }
 
