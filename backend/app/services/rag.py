@@ -1388,7 +1388,6 @@ class RAGService:
             return None
         
         # Pattern 1: Numbered sections like "7.1.2. Section Name" or "1.2.3 Section Name"
-        import re
         numbered_section_pattern = r'^(\d+\.)+\s*\d+[\.\s]+(.+)$'
         match = re.match(numbered_section_pattern, content)
         if match:
@@ -1412,7 +1411,6 @@ class RAGService:
         """Check if text looks like a numbered section heading (e.g., '7.2.2. Section Name')."""
         if not text:
             return False
-        import re
         # Pattern for numbered sections: starts with digits and dots like "7.2.2." or "1.2.3 "
         numbered_pattern = r'^(\d+\.)+\s*\d+[\.\s]+'
         return bool(re.match(numbered_pattern, text.strip()))
@@ -1427,8 +1425,6 @@ class RAGService:
         """
         if not text:
             return text
-        
-        import re
         
         # Pattern 1: Fix numbered items on same line without newline: "1. ... 2. ..."
         # Match: (number + dot + space + content) followed by space + (number + dot + space)
@@ -1492,8 +1488,6 @@ class RAGService:
         if not text:
             return text
         
-        import re
-        
         # 🔥 CRITICAL FIX: Preserve code blocks - split text into code blocks and regular text
         # Pattern to match code blocks: ```language\n...\n```
         code_block_pattern = r'```[\s\S]*?```'
@@ -1552,8 +1546,6 @@ class RAGService:
         """
         if not text or "|" not in text:
             return text
-        
-        import re
         
         # Remove "Nguồn tham khảo:" line at the end (after table)
         # Pattern: "Nguồn tham khảo:" followed by document name and chunk numbers
@@ -1677,7 +1669,6 @@ class RAGService:
                         # Fix invalid escape sequences in JSON string values
                         # Replace invalid escape sequences (like \N, \x, etc.) with escaped backslash
                         # But keep valid ones: \n, \t, \r, \b, \f, \", \\, \/, \uXXXX
-                        import re
                         # Pattern: find \ followed by invalid escape char (not n, t, r, b, f, ", \, /, u, or hex digit)
                         # But don't replace if already escaped (\\)
                         fixed_json = re.sub(
@@ -3213,7 +3204,7 @@ class RAGService:
                     record = rep_item.get("_record", {})
                     if record:
                         print(f"[RAG] ⚠️ WARNING: Pre-selected chunk {record.get('chunk_index', '?')} has no _content after reload!")
-                    continue
+                        continue
                 
                 rep_length = len(rep_content) if rep_content else 0
                 if rep_length == 0:
@@ -3540,9 +3531,9 @@ class RAGService:
                         break
                 else:
                     context_threshold = context_limit * 1.15
-                    if (len(selected_results) >= max_selected_chunks) or \
-                       (current_context_length + content_length + 500 > context_threshold):
-                        break
+                if (len(selected_results) >= max_selected_chunks) or \
+                   (current_context_length + content_length + 500 > context_threshold):
+                    break
             else:
                 # Cho các query types khác: giữ logic cũ
                 if (current_context_length + content_length + 500 > context_limit) or \
@@ -3628,7 +3619,7 @@ class RAGService:
         print(f"[RAG] Selected {len(selected_results)} chunks (context length: {current_context_length}/{context_limit} chars, max_chunks: {max_selected_chunks})")
 
         print(f"[RAG] Priority chunks: {len(priority_chunks)}, Regular chunks: {len(regular_chunks)}")
-        
+
         # Log neighbor chunks được chọn
         neighbor_chunks_selected = [item for item in selected_results if item.get("is_neighbor", False)]
         if neighbor_chunks_selected:
@@ -4547,25 +4538,91 @@ class RAGService:
                         error_msg = f"Server error {response.status_code}"
                         print(f"[RAG] ⚠️ Attempt {attempt+1}/{max_retries} failed: {error_msg}")
                         if attempt < max_retries - 1:
-                            delay = base_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s
-                            print(f"[RAG] Retrying in {delay} seconds...")
+                            # For 503 (overloaded), use longer delays: 5s, 15s, 30s
+                            # For other server errors, use shorter delays: 2s, 4s, 8s
+                            if response.status_code == 503:
+                                delays_503 = [5, 15, 30]  # Longer delays for overloaded model
+                                delay = delays_503[min(attempt, len(delays_503) - 1)]
+                                print(f"[RAG] Model overloaded (503), waiting {delay} seconds before retry...")
+                            else:
+                                delay = base_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s
+                                print(f"[RAG] Retrying in {delay} seconds...")
                             await asyncio.sleep(delay)
                             continue
                         else:
                             # Last attempt failed, raise exception
                             error_detail = response.text
                             print(f"[RAG] Gemini API error ({response.status_code}) after {max_retries} attempts: {error_detail[:500]}")
+                            if response.status_code == 503:
+                                print(f"[RAG] 💡 Tip: Model is temporarily overloaded. Please try again in a few minutes.")
                             raise Exception(f"Gemini API returned {response.status_code} after {max_retries} retries")
                     
                     # Log error details if request fails (non-retryable errors)
                     if response.status_code != 200:
                         error_detail = response.text
                         print(f"[RAG] Gemini API error ({response.status_code}): {error_detail[:500]}")
+                        error_json = None
+                        retry_delay = None
                         try:
                             error_json = response.json()
                             print(f"[RAG] Error JSON: {json.dumps(error_json, ensure_ascii=False, indent=2)}")
+                            
+                            # Extract retry delay from error response (for 429 errors)
+                            is_daily_quota = False
+                            if response.status_code == 429 and error_json:
+                                # Check if this is a daily quota limit (not retryable)
+                                if "error" in error_json and "details" in error_json["error"]:
+                                    for detail in error_json["error"]["details"]:
+                                        # Check for daily quota limit
+                                        if detail.get("@type") == "type.googleapis.com/google.rpc.QuotaFailure":
+                                            violations = detail.get("violations", [])
+                                            for violation in violations:
+                                                quota_id = violation.get("quotaId", "")
+                                                if "PerDay" in quota_id or "Daily" in quota_id:
+                                                    is_daily_quota = True
+                                                    print(f"[RAG] ⚠️ Daily quota limit exceeded (not retryable): {quota_id}")
+                                                    break
+                                        
+                                        # Try to get retry delay from RetryInfo
+                                        if detail.get("@type") == "type.googleapis.com/google.rpc.RetryInfo":
+                                            retry_delay_str = detail.get("retryDelay", "")
+                                            # Parse "30s" or "30.5s" format
+                                            if retry_delay_str.endswith("s"):
+                                                try:
+                                                    retry_delay = float(retry_delay_str[:-1])
+                                                    print(f"[RAG] Extracted retry delay from API: {retry_delay} seconds")
+                                                    # If retry delay > 60 seconds, likely daily quota exhausted
+                                                    if retry_delay > 60:
+                                                        is_daily_quota = True
+                                                        print(f"[RAG] ⚠️ Long retry delay ({retry_delay}s) suggests daily quota exhausted")
+                                                except:
+                                                    pass
                         except:
                             pass
+                        
+                        # For 429 errors, only retry if NOT daily quota limit and retry delay is reasonable
+                        if response.status_code == 429:
+                            if is_daily_quota:
+                                # Daily quota exhausted - fallback immediately
+                                print(f"[RAG] ❌ Daily quota limit exceeded. Falling back immediately (no retry).")
+                                raise Exception(f"Gemini API daily quota exceeded (429)")
+                            elif attempt < max_retries - 1:
+                                # Rate limit - retry with proper delay
+                                if retry_delay:
+                                    delay = max(retry_delay, 5)  # At least 5 seconds
+                                    # Cap delay at 60 seconds to avoid waiting too long
+                                    delay = min(delay, 60)
+                                else:
+                                    # Exponential backoff with longer base for 429
+                                    delay = base_delay * (3 ** attempt)  # 2s, 6s, 18s
+                                print(f"[RAG] ⚠️ Rate limit (429), retrying in {delay} seconds...")
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                # Last attempt failed
+                                raise Exception(f"Gemini API rate limit exceeded (429) after {max_retries} retries")
+                        
+                        # For other non-200 errors, raise exception
                         raise Exception(f"Gemini API returned {response.status_code}")
                     
                     response.raise_for_status()
@@ -5362,7 +5419,7 @@ class RAGService:
                                 })
                                 added_count += 1
                                 print(f"[RAG] ✅ Added chunk {chunk_idx} from {doc_name} (from metadata)")
-                    
+                
                     if added_count == 0:
                         print(f"[RAG] ❌ WARNING: Could not find any chunks from {doc_name} in selected_results or metadata!")
                 

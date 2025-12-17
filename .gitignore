@@ -25,5 +25,20 @@ build/
 
 # Local data caches
 backend/data/uploads/
+backend/data/faiss/
+*.faiss
 
+# Logs
+*.log
+.cursor/
+debug.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation files (không commit các file này)
+CAC_CON_SO_QUAN_TRONG.txt
+Cau_Hoi_Van_Dap_RAG.md
+GIAI_THICH_CHI_TIET_RAG_PY.md
 
