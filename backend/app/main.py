@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -7,14 +8,21 @@ def create_app() -> FastAPI:
     app = FastAPI(title="AI Study QnA", version="0.1.0")
 
     # CORS configuration - must be before other middleware
+    # Allow origins from environment variable or default to localhost
+    allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+    # Add default localhost origins if not in production
+    default_origins = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ]
+    # Combine and filter empty strings
+    all_origins = [origin.strip() for origin in allowed_origins + default_origins if origin.strip()]
+    
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://localhost:3000",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:3000",
-        ],  # Explicit origins for better security
+        allow_origins=all_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],
@@ -44,12 +52,16 @@ def create_app() -> FastAPI:
         
         origin = request.headers.get("origin")
         cors_headers = {}
-        if origin and origin in [
+        # Get allowed origins from environment or use defaults
+        allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+        default_origins = [
             "http://localhost:5173",
             "http://localhost:3000",
             "http://127.0.0.1:5173",
             "http://127.0.0.1:3000",
-        ]:
+        ]
+        all_origins = [o.strip() for o in allowed_origins + default_origins if o.strip()]
+        if origin and origin in all_origins:
             cors_headers = {
                 "Access-Control-Allow-Origin": origin,
                 "Access-Control-Allow-Credentials": "true",
