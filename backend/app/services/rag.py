@@ -4595,9 +4595,9 @@ class RAGService:
                                                     if retry_delay > 60:
                                                         is_daily_quota = True
                                                         print(f"[RAG] ⚠️ Long retry delay ({retry_delay}s) suggests daily quota exhausted")
-                                                except:
+                                                except (ValueError, AttributeError):
                                                     pass
-                        except:
+                        except Exception:
                             pass
                         
                         # For 429 errors, only retry if NOT daily quota limit and retry delay is reasonable
